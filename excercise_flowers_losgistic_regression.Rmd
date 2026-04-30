@@ -1,0 +1,287 @@
+---
+title: "losgistic_Regression_Excercise"
+output: html_document
+date: "2026-04-29"
+---
+
+
+```{r}
+install.packages(c("tidyverse", "caret"))
+```
+
+
+```{r}
+install.packages("patchwork")
+```
+```{r}
+install.packages("yardstick")  
+install.packages("ggplot2")
+```
+
+
+```{r}
+library(tidyverse)
+library(caret)
+library(patchwork)
+library(nnet)       # para softmax (multinom)
+library(yardstick)  # para métricas
+library(ggplot2)
+
+data(iris)
+
+head(iris, 3)
+tail(iris, 3)
+
+iris$es_virginica <- iris$Species == "virginica"
+```
+
+
+```{r}
+
+# MODELO 1: una variable (ancho del pétalo)
+X <- iris[, "Petal.Width", drop = FALSE]
+y <- iris$es_virginica
+
+set.seed(42)
+indices    <- createDataPartition(y, p = 0.75, list = FALSE)
+X_train    <- X[indices, , drop = FALSE]
+y_train    <- y[indices]
+X_train_vec <- X_train[, 1]
+
+train_data <- data.frame(Petal.Width = X_train_vec, es_virginica = y_train)
+modelo     <- glm(es_virginica ~ Petal.Width, data = train_data, family = binomial)
+
+X_new    <- seq(0, 3, length.out = 1000)
+y_proba  <- predict(modelo, newdata = data.frame(Petal.Width = X_new), type = "response")
+decision_boundary <- X_new[which(y_proba >= 0.5)[1]]
+
+plot_data <- data.frame(x = X_new, p_no = 1 - y_proba, p_si = y_proba)
+```
+
+
+```{r}
+X2 <- iris[, c("Petal.Length", "Petal.Width")]
+y2 <- iris$es_virginica
+
+set.seed(42)
+indices2   <- createDataPartition(y2, p = 0.75, list = FALSE)
+train_data2 <- data.frame(X2[indices2, ], es_virginica = y2[indices2])
+modelo2    <- glm(es_virginica ~ Petal.Length + Petal.Width,
+                  data = train_data2, family = binomial)
+
+grilla <- expand.grid(
+  Petal.Length = seq(2.9, 7,   length.out = 300),
+  Petal.Width  = seq(0.8, 2.7, length.out = 200)
+)
+grilla$probabilidad <- predict(modelo2, newdata = grilla, type = "response")
+
+coefs      <- coef(modelo2)
+x_frontera <- c(2.9, 7)
+y_frontera <- -(coefs["Petal.Length"] * x_frontera + coefs["(Intercept)"]) /
+               coefs["Petal.Width"]
+
+train_plot <- data.frame(X2[indices2, ], es_virginica = y2[indices2])
+```
+```{r}
+p1 <- ggplot(plot_data, aes(x = x)) +
+  geom_ribbon(aes(ymin = 0, ymax = p_no), fill = "#3B82F6", alpha = 0.08) +
+  geom_ribbon(aes(ymin = 0, ymax = p_si), fill = "#22C55E", alpha = 0.08) +
+  geom_line(aes(y = p_no), color = "#3B82F6", linetype = "dashed", linewidth = 1.2) +
+  geom_line(aes(y = p_si), color = "#22C55E", linewidth = 1.2) +
+  geom_vline(xintercept = decision_boundary, color = "#F59E0B",
+             linetype = "dotted", linewidth = 1) +
+  geom_point(data = data.frame(x = X_train_vec[!y_train], y = 0),
+             aes(x = x, y = y), color = "#3B82F6", shape = 15, size = 2, alpha = 0.7) +
+  geom_point(data = data.frame(x = X_train_vec[y_train], y = 1),
+             aes(x = x, y = y), color = "#22C55E", shape = 17, size = 2, alpha = 0.7) +
+  annotate("segment", x = decision_boundary, xend = decision_boundary - 0.3,
+           y = 0.08, yend = 0.08, color = "#3B82F6",
+           arrow = arrow(length = unit(0.25, "cm"))) +
+  annotate("segment", x = decision_boundary, xend = decision_boundary + 0.3,
+           y = 0.92, yend = 0.92, color = "#22C55E",
+           arrow = arrow(length = unit(0.25, "cm"))) +
+  annotate("label", x = 0.5, y = 0.75, label = "No virginica",
+           color = "#3B82F6", fill = "white", size = 3, label.size = 0) +
+  annotate("label", x = 2.5, y = 0.75, label = "Virginica",
+           color = "#22C55E", fill = "white", size = 3, label.size = 0) +
+  annotate("label", x = decision_boundary, y = 0.5,
+           label = paste0("Frontera\n", round(decision_boundary, 2), " cm"),
+           color = "#F59E0B", fill = "white", size = 2.8, label.size = 0) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  coord_cartesian(xlim = c(0, 3), ylim = c(-0.02, 1.02)) +
+  labs(title = "Regresión logística — 1 variable",
+       subtitle = "Predictor: ancho del pétalo",
+       x = "Ancho del pétalo (cm)", y = "Probabilidad") +
+  theme_minimal(base_size = 11) +
+  theme(plot.title    = element_text(face = "bold", size = 12),
+        plot.subtitle = element_text(color = "gray50", size = 9),
+        panel.grid.minor = element_blank())
+
+
+p2 <- ggplot() +
+  geom_contour_filled(data = grilla,
+                      aes(x = Petal.Length, y = Petal.Width, z = probabilidad),
+                      alpha = 0.5) +
+  scale_fill_brewer(palette = "RdYlGn", name = "Probabilidad\nvirginica") +
+  geom_contour(data = grilla,
+               aes(x = Petal.Length, y = Petal.Width, z = probabilidad),
+               color = "white", alpha = 0.4, linewidth = 0.4) +
+  geom_line(data = data.frame(x = x_frontera, y = y_frontera),
+            aes(x = x, y = y), color = "white",
+            linetype = "dashed", linewidth = 1.5) +
+  geom_point(data = train_plot[!train_plot$es_virginica, ],
+             aes(x = Petal.Length, y = Petal.Width),
+             color = "#1D4ED8", shape = 15, size = 2.5) +
+  geom_point(data = train_plot[train_plot$es_virginica, ],
+             aes(x = Petal.Length, y = Petal.Width),
+             color = "#15803D", shape = 17, size = 2.5) +
+  annotate("label", x = 3.7, y = 1.0, label = "No virginica",
+           color = "#1D4ED8", fill = "white", size = 3, label.size = 0) +
+  annotate("label", x = 6.3, y = 2.55, label = "Virginica",
+           color = "#15803D", fill = "white", size = 3, label.size = 0) +
+  coord_cartesian(xlim = c(2.9, 7), ylim = c(0.8, 2.7)) +
+  labs(title = "Regresión logística — 2 variables",
+       subtitle = "Predictores: longitud y ancho del pétalo",
+       x = "Longitud del pétalo (cm)", y = "Ancho del pétalo (cm)") +
+  theme_minimal(base_size = 11) +
+  theme(plot.title    = element_text(face = "bold", size = 12),
+        plot.subtitle = element_text(color = "gray50", size = 9),
+        panel.grid.minor = element_blank(),
+        legend.position = "right")
+
+
+```
+```{r}
+
+
+# DATOS 
+data(iris)
+
+X <- iris[, c("Petal.Length", "Petal.Width")]
+y <- iris$Species   # 3 clases: setosa, versicolor, virginica
+
+set.seed(0)
+indices  <- createDataPartition(y, p = 0.7, list = FALSE)
+X_train  <- X[indices, ]
+X_test   <- X[-indices, ]
+y_train  <- y[indices]
+y_test   <- y[-indices]
+
+train_df <- data.frame(X_train, Species = y_train)
+test_df  <- data.frame(X_test,  Species = y_test)
+
+# MODELO SOFTMAX
+
+modelo_softmax <- multinom(Species ~ Petal.Length + Petal.Width,
+                           data = train_df, trace = FALSE)
+
+# PREDICCIÓN para (5cm longitud, 2cm ancho)
+predict(modelo_softmax, 
+        newdata = data.frame(Petal.Length = 5, Petal.Width = 2))
+
+predict(modelo_softmax,
+        newdata = data.frame(Petal.Length = 5, Petal.Width = 2),
+        type = "probs") |> round(3)
+```
+
+```{r}
+# Predicciones y probabilidades en test set
+y_pred  <- predict(modelo_softmax, newdata = test_df)
+y_probs <- predict(modelo_softmax, newdata = test_df, type = "probs") |> 
+           round(2)
+
+# Tabla de resultados
+resultados <- data.frame(
+  y_test     = y_test,
+  y_pred     = y_pred,
+  setosa     = y_probs[, "setosa"],
+  versicolor = y_probs[, "versicolor"],
+  virginica  = y_probs[, "virginica"]
+)
+
+print(resultados)
+```
+```{r}
+# MATRIZ DE CONFUSIÓN
+cm <- confusionMatrix(factor(y_pred), factor(y_test))
+print(cm)
+
+cm_df <- as.data.frame(table(Predicho = y_pred, Real = y_test))
+
+ggplot(cm_df, aes(x = Predicho, y = Real, fill = Freq)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  geom_text(aes(label = Freq), size = 6, fontface = "bold") +
+  scale_fill_gradient(low = "#EFF6FF", high = "#1D4ED8") +
+  labs(title = "Matriz de Confusión — Iris",
+       x = "Valor Predicho", y = "Valor Real") +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.position = "none")
+```
+
+
+```{r}
+# MÉTRICAS POR CLASE
+cm_tabla <- table(Real = y_test, Predicho = y_pred)
+
+TP <- diag(cm_tabla)
+FP <- colSums(cm_tabla) - TP
+FN <- rowSums(cm_tabla) - TP
+TN <- sum(cm_tabla) - TP - FP - FN
+
+# Calcular métricas
+precision <- TP / (TP + FP)
+recall    <- TP / (TP + FN)
+f1        <- 2 * (precision * recall) / (precision + recall)
+accuracy  <- sum(TP) / sum(cm_tabla)
+
+metricas <- data.frame(
+  Clase     = names(TP),
+  TP, FP, FN, TN,
+  Precision = round(precision, 3),
+  Recall    = round(recall, 3),
+  F1        = round(f1, 3)
+)
+
+print(metricas)
+cat("\nAccuracy general:", round(accuracy, 3))
+```
+```{r}
+# GRÁFICO DE FRONTERAS
+grilla <- expand.grid(
+  Petal.Length = seq(1, 7,   length.out = 300),
+  Petal.Width  = seq(0, 2.7, length.out = 300)
+)
+
+grilla$clase <- predict(modelo_softmax, newdata = grilla)
+grilla$prob_versicolor <- predict(modelo_softmax, 
+                                   newdata = grilla, 
+                                   type = "probs")[, "versicolor"]
+
+ggplot() +
+  # Regiones de color por clase predicha
+  geom_tile(data = grilla,
+            aes(x = Petal.Length, y = Petal.Width, fill = clase),
+            alpha = 0.3) +
+  # Isolíneas de probabilidad para versicolor
+  geom_contour(data = grilla,
+               aes(x = Petal.Length, y = Petal.Width, z = prob_versicolor),
+               color = "gray30", linewidth = 0.4,
+               breaks = c(0.15, 0.30, 0.45, 0.60, 0.75)) +
+  # Puntos reales de entrenamiento
+  geom_point(data = data.frame(X_train, Species = y_train),
+             aes(x = Petal.Length, y = Petal.Width, 
+                 color = Species, shape = Species),
+             size = 2.5, alpha = 0.9) +
+  scale_fill_manual(values  = c("#BFDBFE", "#BBF7D0", "#FDE68A")) +
+  scale_color_manual(values = c("#1D4ED8", "#15803D", "#B45309")) +
+  labs(title    = "Softmax Regression — Fronteras de decisión",
+       subtitle = "Iris dataset: 3 clases con 2 features",
+       x = "Longitud del pétalo (cm)",
+       y = "Ancho del pétalo (cm)",
+       fill = "Clase predicha", color = "Clase real", shape = "Clase real") +
+  theme_minimal(base_size = 11) +
+  theme(plot.title    = element_text(face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(color = "gray50", hjust = 0.5))
+```
+
