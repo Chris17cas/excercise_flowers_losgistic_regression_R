@@ -254,7 +254,7 @@ predict(modelo_softmax,
 
 ### 9.1 Logistic Regression — Probability curves and decision boundaries
 
-![Logistic Regression 1 and 2 variables](images\regresion.jpg)
+![Logistic Regression 1 and 2 variables](images/regresion.jpg)
 
 **Interpretation:**
 
@@ -288,7 +288,7 @@ Real setosa      15          0           0
 
 ### 9.3 Softmax Regression — Multiclass decision boundaries
 
-![Softmax Boundaries](images\softmax_regresion.jpg)
+![Softmax Boundaries](images/softmax_regresion.jpg)
 
 **Interpretation:**
 
